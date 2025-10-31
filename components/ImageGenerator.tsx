@@ -88,10 +88,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ conversationId, onSessi
         const result = await imageService.generateImage(prompt, params);
 
         if (result) {
+            // Fix: The result from `generateImage` is an object with an `images` property.
+            // Also, `usageMetadata` is not provided by this endpoint.
             const newEvent: GenerationEvent = {
                 prompt,
                 parameters: params,
-                generatedImages: result,
+                generatedImages: result.images,
                 timestamp: Date.now()
             };
             

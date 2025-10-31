@@ -16,10 +16,18 @@ export type ImageGenerationResultPart = {
 export type MessagePart = TextPart | ImagePart | ImageGenerationResultPart;
 
 
+export interface UsageMetadata {
+  // Fix: Made properties optional to match the response from the Gemini API.
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+}
+
 export interface ChatMessage {
   id: string;
   author: Author;
   parts: MessagePart[];
+  usageMetadata?: UsageMetadata;
 }
 
 
@@ -70,6 +78,7 @@ export interface GenerationEvent {
   };
   generatedImages: string[];
   timestamp: number;
+  usageMetadata?: UsageMetadata;
 }
 
 export interface ImageGenerationConversation extends BaseConversation {
@@ -85,6 +94,7 @@ export interface EditEvent {
     mimeType: string;
   };
   timestamp: number;
+  usageMetadata?: UsageMetadata;
 }
 
 export interface ImageEditingConversation extends BaseConversation {
@@ -96,6 +106,7 @@ export interface ImageEditingConversation extends BaseConversation {
     };
     history: EditEvent[];
     analysisResult?: string;
+    analysisUsageMetadata?: UsageMetadata;
 }
 
 export type Conversation = ChatConversation | ImageGenerationConversation | ImageEditingConversation;

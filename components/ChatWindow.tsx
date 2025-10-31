@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import type { ChatMessage, ChatConversation, GeminiChatModel, MessagePart, GenerationEvent } from '../types';
+import type { ChatMessage, ChatConversation, GeminiChatModel, MessagePart, GenerationEvent, UsageMetadata } from '../types';
 import { Author } from '../types';
 import { chatService } from '../services/chatService';
 import { imageService } from '../services/imageService';
@@ -163,14 +163,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onConversationC
         setMessages(prev => [...prev, modelMessage]);
 
         let fullResponse = '';
+        let usageMetadata: UsageMetadata | undefined;
         for await (const chunk of chatService.getChatResponseStream(updatedMessages, model)) {
-            fullResponse += chunk;
+            fullResponse += chunk.text;
+            if (chunk.usageMetadata) {
+                // Fix: The type of chunk.usageMetadata is compatible now due to changes in types.ts
+                usageMetadata = chunk.usageMetadata;
+            }
             setMessages(prev => prev.map((msg): ChatMessage => msg.id === modelMessageId ? { ...msg, parts: [{ type: 'text', text: fullResponse }] } : msg));
         }
 
         setIsLoading(false);
 
-        const finalModelMessage: ChatMessage = { ...modelMessage, parts: [{ type: 'text', text: fullResponse }] };
+        const finalModelMessage: ChatMessage = { ...modelMessage, parts: [{ type: 'text', text: fullResponse }], usageMetadata };
+        // Mettre à jour l'état local avec le message final, y compris les métadonnées de jeton, pour assurer un affichage immédiat.
+        setMessages(prev => prev.map(msg => msg.id === modelMessageId ? finalModelMessage : msg));
         await saveMessage(finalModelMessage);
     };
 
@@ -198,10 +205,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ conversationId, onConversationC
                 author: Author.MODEL,
                 parts: [{
                     type: 'imageGenerationResult',
-                    images: result.map(url => ({ url })),
+                    images: result.images.map(url => ({ url })),
                     prompt: prompt,
                     parameters: params,
-                }]
+                }],
+                // Fix: `usageMetadata` is not returned by `generateImage`, so it's removed.
             };
             setMessages(prev => [...prev, modelMessage]);
             await saveMessage(modelMessage);

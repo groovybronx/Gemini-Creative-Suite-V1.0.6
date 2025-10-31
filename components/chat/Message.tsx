@@ -2,6 +2,7 @@
 import React from 'react';
 import { Author, type ChatMessage, type MessagePart, type GenerationEvent } from '../../types';
 import ImageGenerationResult from './ImageGenerationResult';
+import TokenCount from '../TokenCount';
 
 interface MessageProps {
     message: ChatMessage;
@@ -24,27 +25,27 @@ const Message: React.FC<MessageProps> = ({ message, onViewImage, onEditImage, on
                 return null;
         }
     }
+    
+    const isUser = message.author === Author.USER;
 
     return (
         <div
-            className={`flex gap-3 ${message.author === Author.USER ? 'justify-end' : 'justify-start'
-                }`}
+            className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
         >
-            {message.author === Author.MODEL && (
+            {!isUser && (
                 <div className="w-8 h-8 rounded-full bg-accent-khaki flex-shrink-0"></div>
             )}
 
-            {message.author === Author.USER ? (
-                <div className="relative group">
-                    <div className="max-w-xl p-3 rounded-lg shadow-md bg-accent-yellow text-gray-900">
-                        {message.parts.map(renderMessagePart)}
-                    </div>
-                </div>
-            ) : (
-                <div className="max-w-xl p-3 rounded-lg shadow-md bg-base-bg text-text-primary">
+            <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+                <div className={`max-w-xl p-3 rounded-lg shadow-md ${
+                    isUser ? 'bg-accent-yellow text-gray-900' : 'bg-base-bg text-text-primary'
+                }`}>
                     {message.parts.map(renderMessagePart)}
                 </div>
-            )}
+                {!isUser && message.usageMetadata && (
+                    <TokenCount metadata={message.usageMetadata} className="mt-1" />
+                )}
+            </div>
         </div>
     );
 };

@@ -3,11 +3,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { imageService } from '../services/imageService';
 import { dbService } from '../services/dbService';
-import type { ImageEditingConversation, EditEvent } from '../types';
+import type { ImageEditingConversation, EditEvent, UsageMetadata } from '../types';
 import SpinnerIcon from './icons/SpinnerIcon';
 import ChevronLeftIcon from './icons/ChevronLeftIcon';
 import ChevronRightIcon from './icons/ChevronRightIcon';
 import RecallIcon from './icons/RecallIcon';
+import TokenCount from './TokenCount';
 
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -39,6 +40,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ conversationId, onSessionCrea
   const [history, setHistory] = useState<EditEvent[]>([]);
   const [activeHistoryIndex, setActiveHistoryIndex] = useState<number>(-1); // -1 for base image
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+  const [analysisUsageMetadata, setAnalysisUsageMetadata] = useState<UsageMetadata | null>(null);
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState<{ analysis: boolean; edit: boolean }>({ analysis: false, edit: false });
   const [isPanelOpen, setIsPanelOpen] = useState(true);
@@ -56,7 +58,8 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ conversationId, onSessionCrea
           const loadedHistory = convo.history || [];
           setHistory(loadedHistory);
           setActiveHistoryIndex(loadedHistory.length - 1); // Set active to the latest image
-          setAnalysisResult(convo.analysisResult);
+          setAnalysisResult(convo.analysisResult ?? null);
+          setAnalysisUsageMetadata(convo.analysisUsageMetadata ?? null);
           setPrompt('');
         }
       } else {
@@ -65,6 +68,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ conversationId, onSessionCrea
         setHistory([]);
         setActiveHistoryIndex(-1);
         setAnalysisResult(null);
+        setAnalysisUsageMetadata(null);
         setPrompt('');
       }
     };
@@ -87,6 +91,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ conversationId, onSessionCrea
           baseImage,
           history: data.history || [],
           analysisResult: data.analysisResult,
+          analysisUsageMetadata: data.analysisUsageMetadata,
         };
         await dbService.addOrUpdateConversation(newConversation);
         onSessionCreated(convoId);
@@ -115,6 +120,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ conversationId, onSessionCrea
       setHistory([]);
       setActiveHistoryIndex(-1);
       setAnalysisResult(null);
+      setAnalysisUsageMetadata(null);
       setPrompt('');
       
       currentConversationIdRef.current = null; // Force creation of a new session
@@ -126,10 +132,16 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ conversationId, onSessionCrea
     if (!baseImage) return;
     setIsLoading({ ...isLoading, analysis: true });
     setAnalysisResult(null);
+    setAnalysisUsageMetadata(null);
     const result = await imageService.analyzeImage(baseImage.base64, baseImage.mimeType, 'Describe this image in detail.');
-    setAnalysisResult(result);
+    if (result) {
+        setAnalysisResult(result.text);
+        setAnalysisUsageMetadata(result.usageMetadata ?? null);
+        await saveSession({ analysisResult: result.text, analysisUsageMetadata: result.usageMetadata, history });
+    } else {
+        setAnalysisResult("Sorry, I couldn't analyze the image.");
+    }
     setIsLoading({ ...isLoading, analysis: false });
-    await saveSession({ analysisResult: result, history });
   };
 
   const handleEdit = async () => {
@@ -141,24 +153,25 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ conversationId, onSessionCrea
     // If editing from a past point, truncate the history to create a new branch
     const newHistoryBase = history.slice(0, activeHistoryIndex + 1);
 
-    const resultUrl = await imageService.editImage(sourceImage.base64, sourceImage.mimeType, prompt);
+    const result = await imageService.editImage(sourceImage.base64, sourceImage.mimeType, prompt);
     
-    if(resultUrl) {
-        const parsedData = parseDataUrl(resultUrl);
+    if(result && result.imageUrl) {
+        const parsedData = parseDataUrl(result.imageUrl);
         if (parsedData) {
             const newEvent: EditEvent = {
                 prompt,
                 editedImage: {
-                    url: resultUrl,
+                    url: result.imageUrl,
                     base64: parsedData.base64,
                     mimeType: parsedData.mimeType,
                 },
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                usageMetadata: result.usageMetadata,
             };
             const newHistory = [...newHistoryBase, newEvent];
             setHistory(newHistory);
             setActiveHistoryIndex(newHistory.length - 1); // Set new image as active
-            await saveSession({ history: newHistory, analysisResult });
+            await saveSession({ history: newHistory, analysisResult, analysisUsageMetadata });
         }
     }
     
@@ -236,6 +249,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ conversationId, onSessionCrea
                                 <div>
                                     <h3 className="font-semibold text-text-secondary mb-1">Analysis:</h3>
                                     <div className="bg-component-bg p-3 rounded-lg text-sm whitespace-pre-wrap">{analysisResult}</div>
+                                    {analysisUsageMetadata && <TokenCount metadata={analysisUsageMetadata} className="mt-1" />}
                                 </div>
                             )}
                             {(baseImage || history.length > 0) && (
@@ -263,7 +277,10 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ conversationId, onSessionCrea
                                                 className={`bg-component-bg p-2 rounded-lg flex items-center gap-3 cursor-pointer transition-all ${activeHistoryIndex === index ? 'ring-2 ring-accent-yellow' : 'hover:bg-border-color'}`}
                                             >
                                                 <img src={event.editedImage.url} alt="Edit result" className="object-contain rounded-md flex-shrink-0 bg-black/20" style={{width: `${thumbnailSize}rem`, height: `${thumbnailSize}rem`}}/>
-                                                <p className="text-sm italic text-text-primary flex-grow">"{event.prompt}"</p>
+                                                <div className="flex-grow min-w-0">
+                                                    <p className="text-sm italic text-text-primary truncate">"{event.prompt}"</p>
+                                                    {event.usageMetadata && <TokenCount metadata={event.usageMetadata} className="mt-1" />}
+                                                </div>
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); setPrompt(event.prompt); }}
                                                     className="text-text-secondary hover:text-text-primary p-1 rounded-full hover:bg-border-color flex-shrink-0"

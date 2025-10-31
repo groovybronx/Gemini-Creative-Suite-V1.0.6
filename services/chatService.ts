@@ -1,5 +1,5 @@
 import { ai } from './geminiClient';
-import { type Content, type Part } from "@google/genai";
+import { type Content, type Part, type GenerateContentResponse } from "@google/genai";
 import { Author, type ChatMessage } from '../types';
 
 const buildContents = (messages: ChatMessage[]): Content[] => {
@@ -27,7 +27,7 @@ const buildContents = (messages: ChatMessage[]): Content[] => {
 };
 
 export const chatService = {
-  getChatResponseStream: async function* (messages: ChatMessage[], model: string): AsyncGenerator<string> {
+  getChatResponseStream: async function* (messages: ChatMessage[], model: string): AsyncGenerator<GenerateContentResponse> {
     try {
         const contents = buildContents(messages);
         const responseStream = await ai.models.generateContentStream({
@@ -39,11 +39,14 @@ export const chatService = {
         });
 
         for await (const chunk of responseStream) {
-            yield chunk.text;
+            yield chunk;
         }
     } catch (error) {
         console.error("Error getting chat response stream:", error);
-        yield "Sorry, I encountered an error. Please try again.";
+        yield {
+            text: "Sorry, I encountered an error. Please try again.",
+            candidates: [],
+        } as unknown as GenerateContentResponse;
     }
   },
 };
